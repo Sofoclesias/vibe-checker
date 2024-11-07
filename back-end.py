@@ -10,16 +10,24 @@ from model.architecture import ResEmoteNet
 
 # https://www.instructables.com/Face-Tracking-Device-Python-Arduino/
 
+# Comandos de acceso a Arduino
 arduino = serial.Serial(
     port='COM3', baudrate=9600, bytesize=8, timeout=2,stopbits=serial.STOPBITS_ONE               
 )
 time.sleep(2)
+
+# Algoritmo Haar Cascade para reconocimiento de rostros
 face_cascade = cv.CascadeClassifier(cv.data.haarcascades + 'haarcascade_frontalface_default.xml')
 font = cv.FONT_HERSHEY_SIMPLEX
 
+# Activación de pytorch y del modelo predictivo
 dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-emotions = ['happy', 'surprise', 'sad', 'anger', 'disgust', 'fear', 'neutral']
+model = ResEmoteNet().to(dev)
+model.load_state_dict(torch.load('model/best.pth', weights_only=True)['model_state_dict'])
+model.eval()
+emotions = ['happy', 'surprise', 'sad', 'anger', 'disgust', 'fear', 'neutral'] # Labels
 
+# Pipeline de preprocesamiento
 preprocess = transforms.Compose([
     transforms.Resize((64,64)),
     transforms.Grayscale(num_output_channels=3),
@@ -27,25 +35,31 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-model = ResEmoteNet().to(dev)
-model.load_state_dict(torch.load('model/best.pth', weights_only=True)['model_state_dict'])
-model.eval()
-
-# Hiperparámetros PID controller
+# Hiperparámetros PID controller (en principio, se debería optimizar)
 Kp = 0.5 
 Ki = 0.01
 Kd = 0.1
 
 def send_signal(pan, tilt):
+    """
+    Los resultados de los ángulos pan y tilt son enviados a Arduino.
+    """
     com = f"{pan},{tilt}\n"
     arduino.write(com.encode())
 
 def pid_control(err,prev_err,integral):
+    """
+    Actualiza el valor de la integral y calcula los ángulos según la
+    lógica del controlador PID.
+    """
     integral += err
     output = Kp * err + Ki * integral + Kd * (err - prev_err)
     return output.flatten(), integral
 
 def detect_emotion(frame):
+    """
+    Pasa un frame del rostro al modelo predictivo para su clasificación.
+    """
     x = preprocess(frame).unsqueeze(0).to(dev)
     with torch.no_grad():
         y = model(x)
@@ -57,7 +71,6 @@ def camera_ready():
     '''
     Proyecta la cámara en una ventana de escritorio para la presentación expositiva.
     '''
-    
     cap = cv.VideoCapture(0)
     cv.namedWindow("Vibe Checker",cv.WINDOW_NORMAL)
     center = np.array([[int(cap.get(cv.CAP_PROP_FRAME_WIDTH)//2)],[int(cap.get(cv.CAP_PROP_FRAME_HEIGHT)//2)]])
@@ -84,7 +97,6 @@ def camera_ready():
                 err = np.array(center) - np.array([[(x+w)//2],[(y+h)//2]])
                 rotation, integral = pid_control(err,prev_err,integral)
                 prev_err = err
-
                 send_signal(rotation[0],rotation[1])
             
             cv.imshow('Vibe Checker',frame)
