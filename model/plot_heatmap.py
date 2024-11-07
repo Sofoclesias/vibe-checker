@@ -3,10 +3,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Read the CSV file
-df = pd.read_csv('classification_scores_valid.csv')
+df = pd.read_csv('model/classification_scores_valid.csv')
 
 # Get the emotion labels
-emotions = ['happy', 'surprise', 'sad', 'anger', 'disgust', 'fear', 'neutral']
+emotions = ['happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear']
 
 # Convert emotion columns to numeric data type
 for emotion in emotions:
