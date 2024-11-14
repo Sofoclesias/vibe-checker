@@ -15,15 +15,19 @@ arduino = serial.Serial(
     port='COM3', baudrate=9600, bytesize=8, timeout=2,stopbits=serial.STOPBITS_ONE               
 )
 time.sleep(2)
+arduino.close()
+time.sleep(2)
+arduino.open()
 
 # Algoritmo Haar Cascade para reconocimiento de rostros
 face_cascade = cv.CascadeClassifier(cv.data.haarcascades + 'haarcascade_frontalface_default.xml')
 font = cv.FONT_HERSHEY_SIMPLEX
 
 # Activación de pytorch y del modelo predictivo
-dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+dev = torch.device('cpu')
 model = ResEmoteNet().to(dev)
-model.load_state_dict(torch.load('model/best.pth', weights_only=True)['model_state_dict'])
+checkpoint = torch.load('model/best.pth', map_location=dev, weights_only=True)
+model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 emotions = ['happy', 'surprise', 'sad', 'anger', 'disgust', 'fear', 'neutral'] # Labels
 
@@ -40,12 +44,22 @@ Kp = 0.5
 Ki = 0.01
 Kd = 0.1
 
+def send_signal2(emotion):
+    """
+    Los resultados de los ángulos pan y tilt son enviados a Arduino.
+    """
+    com = f"{emotion}\n"
+    arduino.write(bytes(com,'utf-8'))
+    time.sleep(0.1) 
+    respuesta = arduino.readline().decode().strip() 
+    print("Arduino responde:", respuesta)
+
 def send_signal(pan, tilt):
     """
     Los resultados de los ángulos pan y tilt son enviados a Arduino.
     """
     com = f"{pan},{tilt}\n"
-    arduino.write(com.encode())
+    arduino.write(bytes(com,'utf-8'))
 
 def pid_control(err,prev_err,integral):
     """
@@ -71,7 +85,7 @@ def camera_ready():
     '''
     Proyecta la cámara en una ventana de escritorio para la presentación expositiva.
     '''
-    cap = cv.VideoCapture(0)
+    cap = cv.VideoCapture(1)
     cv.namedWindow("Vibe Checker",cv.WINDOW_NORMAL)
     center = np.array([[int(cap.get(cv.CAP_PROP_FRAME_WIDTH)//2)],[int(cap.get(cv.CAP_PROP_FRAME_HEIGHT)//2)]])
     prev_err = np.array([[0],[0]])
@@ -94,10 +108,11 @@ def camera_ready():
                 cv.putText(frame,f'{emotion} - {round(prob*100,2)}%',(x-5,y-15),font,0.8,(0, 255, 0),2)
                 
                 # Comandos para Arduino
-                err = np.array(center) - np.array([[(x+w)//2],[(y+h)//2]])
-                rotation, integral = pid_control(err,prev_err,integral)
-                prev_err = err
-                send_signal(rotation[0],rotation[1])
+                #err = np.array(center) - np.array([[(x+w)//2],[(y+h)//2]])
+                #rotation, integral = pid_control(err,prev_err,integral)
+                #prev_err = err
+                #send_signal(rotation[0],rotation[1])
+            send_signal2(emotion)
             
             cv.imshow('Vibe Checker',frame)
             if cv.waitKey(1)==ord('x'):
